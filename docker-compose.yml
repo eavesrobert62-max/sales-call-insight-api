@@ -1,0 +1,58 @@
+version: '3.9'
+
+services:
+  api:
+    build: .
+    container_name: sales_api
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  worker:
+    build: .
+    container_name: sales_worker
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - postgres
+    command: celery -A app.tasks.celery_app worker --loglevel=info
+
+  redis:
+    image: redis:7
+    container_name: sales_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  postgres:
+    image: postgres:15
+    container_name: sales_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sales
+      POSTGRES_PASSWORD: salespass
+      POSTGRES_DB: sales_insights
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  flower:
+    image: mher/flower
+    container_name: sales_flower
+    command: celery --broker=redis://redis:6379/0 flower
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+
+volumes:
+  postgres_data:
