@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import uvicorn
 import os
+import asyncio
 
 from app.db.postgres import engine
 from app.db.models import Base
@@ -14,19 +15,27 @@ from app.core.config import settings
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    print("Starting Sales Call Insight API...")
+    print("🚀 Starting Sales Call Insight API...")
     
-    # Create database tables
-    try:
-        Base.metadata.create_all(bind=engine)
-        print("✅ Database tables created/verified")
-    except Exception as e:
-        print(f"⚠️ Database initialization warning: {e}")
+    # Create database tables with retry logic for Railway
+    max_retries = 10
+    for i in range(max_retries):
+        try:
+            Base.metadata.create_all(bind=engine)
+            print("✅ Database tables created/verified")
+            break
+        except Exception as e:
+            print(f"⚠️ Database connection attempt {i+1}/{max_retries}: {str(e)[:100]}")
+            if i < max_retries - 1:
+                await asyncio.sleep(3)  # Wait 3 seconds before retry
+            else:
+                print("❌ Database connection failed after all retries, but continuing...")
+                # Don't crash - Railway may need more time to provision DB
     
     yield
     
     # Shutdown
-    print("Shutting down...")
+    print("👋 Shutting down...")
 
 
 app = FastAPI(
@@ -65,6 +74,16 @@ async def root():
         "docs": "/docs",
         "health": "/health",
         "status": "running"
+    }
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Railway"""
+    return {
+        "status": "healthy",
+        "service": "sales-call-insight-api",
+        "version": "1.0.0"
     }
 
 
